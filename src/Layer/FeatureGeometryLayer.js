@@ -13,10 +13,11 @@ import Feature2Mesh from 'Converter/Feature2Mesh';
  * @property {boolean} isFeatureGeometryLayer - Used to checkout whether this layer is
  * a FeatureGeometryLayer. Default is true. You should not change this, as it is used
  * internally for optimisation.
+ *
+ * @extends GeometryLayer
  */
 class FeatureGeometryLayer extends GeometryLayer {
     /**
-     * @extends GeometryLayer
      *
      * @param {string} id - The id of the layer, that should be unique. It is
      * not mandatory, but an error will be emitted if this layer is added a
@@ -45,15 +46,28 @@ class FeatureGeometryLayer extends GeometryLayer {
      * **WARNING** If the source is `VectorTilesSource` then `accurate` is always false.
      */
     constructor(id, options = {}) {
-        options.update = FeatureProcessing.update;
-        options.convert = Feature2Mesh.convert({
-            batchId: options.batchId,
+        const {
+            object3d,
+            batchId,
+            onMeshCreated,
+            accurate = true,
+            filter,
+            ...geometryOptions
+        } = options;
+
+        super(id, object3d || new Group(), geometryOptions);
+
+        this.update = FeatureProcessing.update;
+        this.convert = Feature2Mesh.convert({
+            batchId,
         });
-        super(id, options.object3d || new Group(), options);
+
+        this.onMeshCreated = onMeshCreated;
 
         this.isFeatureGeometryLayer = true;
-        this.accurate = options.accurate ?? true;
+        this.accurate = accurate;
         this.buildExtent = !this.accurate;
+        this.filter = filter;
     }
 
     preUpdate(context, sources) {
