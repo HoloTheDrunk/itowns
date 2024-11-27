@@ -73,10 +73,14 @@ export interface TileBuilder<SpecializedParams extends TileBuilderParams> {
     computeShareableExtent(extent: Extent): ShareableExtent;
 }
 
-export function newTileGeometry(
-    builder: TileBuilder<TileBuilderParams>,
-    params: TileBuilderParams,
-) {
+export async function newTileGeometry<BuilderParams extends TileBuilderParams>(
+    builder: TileBuilder<BuilderParams>,
+    params: BuilderParams,
+): Promise<{
+    geometry: TileGeometry<BuilderParams>,
+    quaternion: THREE.Quaternion,
+    position: THREE.Vector3,
+}> {
     const { shareableExtent, quaternion, position } =
         builder.computeShareableExtent(params.extent);
 
@@ -86,7 +90,6 @@ export function newTileGeometry(
         `${builder.crs}_${params.disableSkirt ? 0 : 1}_${params.segments}`;
 
     let promiseGeometry = cacheTile.get(south, params.level, bufferKey);
-    // let promiseGeometry;
 
     // build geometry if doesn't exist
     if (!promiseGeometry) {
@@ -99,7 +102,6 @@ export function newTileGeometry(
         // Read previously cached values (index and uv.wgs84 only
         // depend on the # of triangles)
         let cachedBuffers = cacheBuffer.get(bufferKey);
-        // cachedBuffers = undefined;
         params.buildIndexAndUv_0 = !cachedBuffers;
         let buffers;
         try {
@@ -142,14 +144,6 @@ export function newTileGeometry(
         return Promise.resolve({ geometry, quaternion, position });
     }
 
-    // (cacheTile.get(south, params.level, bufferKey)! as
-    // Promise<THREE.BufferGeometry>)
-    //     .then((v) => {
-    //         console.log(
-    //         `cache.get(${south}, ${params.level}, ${bufferKey}).index:`,
-    //         v.index == null);
-    //     });
-
-    return (promiseGeometry as Promise<TileGeometry>)
+    return (promiseGeometry as Promise<TileGeometry<BuilderParams>>)
         .then(geometry => ({ geometry, quaternion, position }));
 }

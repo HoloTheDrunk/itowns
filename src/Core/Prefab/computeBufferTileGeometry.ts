@@ -72,10 +72,10 @@ function allocateIndexBuffer(
     };
 }
 
-function allocateBuffers(
+function allocateBuffers<BuilderParams extends TileBuilderParams>(
     nVertex: number,
     nSeg: number,
-    builder: TileBuilder<TileBuilderParams>,
+    builder: TileBuilder<BuilderParams>,
     params: TileBuilderParams,
 ): TmpBuffers {
     const {
@@ -128,9 +128,9 @@ type ComputeUvs =
     [typeof computeUv0 | (() => void), ReturnType<typeof initComputeUv1>?];
 
 // TODO: Split this even further into subfunctions
-export function computeBuffers(
-    builder: TileBuilder<TileBuilderParams>,
-    params: TileBuilderParams,
+export function computeBuffers<BuilderParams extends TileBuilderParams>(
+    builder: TileBuilder<BuilderParams>,
+    params: BuilderParams,
 ) {
     //     n seg, n+1 vert    + <- skirt, n verts per side
     //    <---------------> / |

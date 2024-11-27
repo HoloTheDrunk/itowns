@@ -9,13 +9,13 @@ import Cache from 'Core/Scheduler/Cache';
 
 import OBB from 'Renderer/OBB';
 
-type PartialTileBuilderParams =
-    Pick<TileBuilderParams, 'extent' | 'level' | 'zoom'>
-    & Partial<TileBuilderParams>;
+type PartialTileBuilderParams<SpecializedParams extends TileBuilderParams> =
+    Pick<SpecializedParams, 'extent' | 'level' | 'zoom'>
+    & Partial<SpecializedParams>;
 
-function defaultBuffers(
-    builder: TileBuilder<TileBuilderParams>,
-    params: PartialTileBuilderParams,
+function defaultBuffers<BuilderParams extends TileBuilderParams>(
+    builder: TileBuilder<BuilderParams>,
+    params: PartialTileBuilderParams<BuilderParams>,
 ): GpuBufferAttributes {
     const fullParams = {
         disableSkirt: false,
@@ -25,7 +25,7 @@ function defaultBuffers(
         projected: new Projected(0, 0),
         center: builder.center(params.extent!).clone(),
         ...params,
-    };
+    } as BuilderParams;
 
     const buffers = computeBuffers(builder, fullParams);
     const bufferAttributes = {
@@ -48,7 +48,8 @@ function defaultBuffers(
     return bufferAttributes;
 }
 
-export class TileGeometry extends THREE.BufferGeometry {
+export class TileGeometry<BuilderParams extends TileBuilderParams>
+    extends THREE.BufferGeometry {
     public OBB: OBB | null;
     public extent: Extent;
     public segments: number;
@@ -60,8 +61,8 @@ export class TileGeometry extends THREE.BufferGeometry {
     } | null;
 
     public constructor(
-        builder: TileBuilder<TileBuilderParams>,
-        params: TileBuilderParams,
+        builder: TileBuilder<BuilderParams>,
+        params: BuilderParams,
         bufferAttributes: GpuBufferAttributes = defaultBuffers(builder, params),
     ) {
         super();

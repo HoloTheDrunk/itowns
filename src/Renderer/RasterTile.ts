@@ -1,13 +1,18 @@
 import * as THREE from 'three';
-import { ELEVATION_MODES } from 'Renderer/LayeredMaterial';
-import { checkNodeElevationTextureValidity, insertSignificantValuesFromParent, computeMinMaxElevation } from 'Parser/XbilParser';
+import LayeredMaterial, { ELEVATION_MODES } from 'Renderer/LayeredMaterial';
+import {
+    checkNodeElevationTextureValidity,
+    insertSignificantValuesFromParent,
+    computeMinMaxElevation,
+} from 'Parser/XbilParser';
 import CRS from 'Core/Geographic/Crs';
+import { Extent, GeometryLayer } from 'Main';
 
 export const EMPTY_TEXTURE_ZOOM = -1;
 
 const pitch = new THREE.Vector4();
 
-function getIndiceWithPitch(i, pitch, w) {
+function getIndiceWithPitch(i: number, pitch: THREE.Vector4, w: number) {
     // Return corresponding indice in parent tile using pitch
     const currentX = (i % w) / w;  // normalized
     const currentY = Math.floor(i / w) / w; // normalized
@@ -25,14 +30,25 @@ function getIndiceWithPitch(i, pitch, w) {
  * This material is applied on terrain (TileMesh).
  * The color textures are mapped to color the terrain.
  * The elevation textures are used to displace vertex terrain.
- *
- * @class RasterTile
  */
-class RasterTile extends THREE.EventDispatcher {
-    constructor(material, layer) {
+export class RasterTile extends THREE.EventDispatcher {
+    public layer: GeometryLayer;
+    public crs: number;
+    public textures: THREE.Texture[];
+    public offsetScales: unknown[];
+    public level: number;
+    public material: LayeredMaterial;
+    private _handlerCBEvent: () => void;
+
+    constructor(material: LayeredMaterial, layer: GeometryLayer) {
         super();
         this.layer = layer;
-        this.crs = layer.parent.tileMatrixSets.indexOf(CRS.formatToTms(layer.crs));
+        this.crs = layer
+            // FIXME: Remove once GeometryLayer is typed
+            // @ts-expect-error: parent field not yet typed
+            .parent
+            .tileMatrixSets
+            .indexOf(CRS.formatToTms(layer.crs));
         if (this.crs == -1) {
             console.error('Unknown crs:', layer.crs);
         }
@@ -43,15 +59,16 @@ class RasterTile extends THREE.EventDispatcher {
         this.material = material;
 
         this._handlerCBEvent = () => { this.material.layersNeedUpdate = true; };
-        layer.addEventListener('visible-property-changed', this._handlerCBEvent);
-        layer.addEventListener('opacity-property-changed', this._handlerCBEvent);
+        ['visible-property-changed', 'opacity-property-changed']
+            .forEach(event => layer
+                .addEventListener(event, this._handlerCBEvent));
     }
 
-    get id() {
+    get id(): string {
         return this.layer.id;
     }
 
-    get opacity() {
+    get opacity(): number {
         return this.layer.opacity;
     }
 
@@ -59,21 +76,33 @@ class RasterTile extends THREE.EventDispatcher {
         return this.layer.visible;
     }
 
-    initFromParent(parent, extents) {
+    initFromParent(parent: RasterTile, extents: Extent[]) {
         if (parent && parent.level > this.level) {
             let index = 0;
             for (const c of extents) {
                 for (const texture of parent.textures) {
+                    // FIXME: Create THREE.Texture extending class with field
+                    // @ts-expect-error: extent field is dynamically added
                     if (c.isInside(texture.extent)) {
-                        this.setTexture(index++, texture, c.offsetToParent(texture.extent));
+                        this.setTexture(
+                            index++,
+                            texture,
+                            // FIXME:
+                            // @ts-expect-error: same deal
+                            c.offsetToParent(texture.extent),
+                        );
                         break;
                     }
                 }
             }
 
+            // @ts-expect-error: constexpr
             if (__DEBUG__) {
                 if (index != extents.length) {
-                    console.error(`non-coherent result ${index} vs ${extents.length}.`, extents);
+                    console.error(
+                        `non-coherent result ${index} vs ${extents.length}.`,
+                        extents,
+                    );
                 }
             }
         }
@@ -81,8 +110,14 @@ class RasterTile extends THREE.EventDispatcher {
 
     dispose(removeEvent = true) {
         if (removeEvent) {
-            this.layer.removeEventListener('visible-property-changed', this._handlerCBEvent);
-            this.layer.removeEventListener('opacity-property-changed', this._handlerCBEvent);
+            this.layer.removeEventListener(
+                'visible-property-changed',
+                this._handlerCBEvent,
+            );
+            this.layer.removeEventListener(
+                'opacity-property-changed',
+                this._handlerCBEvent,
+            );
             // dispose all events
             this._listeners = {};
         }
@@ -112,8 +147,6 @@ class RasterTile extends THREE.EventDispatcher {
         }
     }
 }
-
-export default RasterTile;
 
 export class RasterColorTile extends RasterTile {
     get effect_type() {
