@@ -6,7 +6,7 @@ import PlanarLayer from 'Core/Prefab/Planar/PlanarLayer';
 import Tile from 'Core/Tile/Tile';
 import { globalExtentTMS } from 'Core/Tile/TileGrid';
 import TileProvider from 'Provider/TileProvider';
-import newTileGeometry from 'Core/Prefab/TileBuilder';
+import { newTileGeometry } from 'Core/Prefab/TileBuilder';
 import OBB from 'Renderer/OBB';
 import ElevationLayer from 'Layer/ElevationLayer';
 import Source from 'Source/Source';
@@ -23,7 +23,7 @@ FakeTileMesh.prototype.constructor = FakeTileMesh;
 FakeTileMesh.prototype.findCommonAncestor = TileMesh.prototype.findCommonAncestor;
 
 describe('TileMesh', function () {
-    const tile = new Tile('TMS:3857', 5, 10, 10);
+    const tile = new Tile('EPSG:3857', 5, 10, 10);
     const geom = new THREE.BufferGeometry();
     geom.OBB = new OBB();
 
@@ -136,9 +136,9 @@ describe('TileMesh', function () {
         };
 
         newTileGeometry(planarlayer.builder, paramsGeometry).then((r) => {
-            r.geometry._count++;
+            r.geometry.increaseRefCount();
             return newTileGeometry(planarlayer.builder, paramsGeometry).then((r) => {
-                assert.equal(r.geometry._count, 1);
+                assert.equal(r.geometry.refCount, 1);
                 done();
             });
         });
@@ -175,8 +175,8 @@ describe('TileMesh', function () {
     elevationLayer.parent = planarlayer;
 
     const material = new THREE.Material();
-    material.addLayer = () => {};
-    material.setSequenceElevation = () => {};
+    material.addLayer = () => { };
+    material.setSequenceElevation = () => { };
 
     it('event rasterElevationLevelChanged RasterElevationTile sets TileMesh bounding box ', () => {
         const tileMesh = new TileMesh(geom, material, planarlayer, tile.toExtent('EPSG:3857'), 0);
@@ -221,7 +221,7 @@ describe('TileMesh', function () {
         const tileMesh = new TileMesh(geom, material, planarlayer, tile.toExtent('EPSG:3857'), 0);
         const rasterNode = elevationLayer.setupRasterNode(tileMesh);
         const texture = new THREE.Texture();
-        texture.extent = new Tile('TMS:3857', 4, 10, 10);
+        texture.extent = new Tile('EPSG:3857', 4, 10, 10);
         texture.image = {
             width: 3,
             height: 3,
