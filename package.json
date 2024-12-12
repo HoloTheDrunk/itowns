@@ -1,6 +1,6 @@
 {
   "name": "@holothedrunk/itowns",
-  "version": "2.44.4-next.2",
+  "version": "2.44.4-next.3",
   "description": "A JS/WebGL framework for 3D geospatial data visualization",
   "type": "module",
   "main": "lib/Main.js",
