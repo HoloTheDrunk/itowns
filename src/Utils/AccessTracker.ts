@@ -1,97 +1,128 @@
-class AccessTracker {
-    private accessed: Map<Record<string, unknown>, Map<string, [boolean, number]>>;
-    private summary: Map<string, [boolean, number]>;
+type AccessMode = 'get' | 'set';
+type Timestamp = number;
 
-    constructor(timeout = 2000) {
+type TrackingData = {
+    mode: AccessMode,
+    exists: boolean,
+    time: Timestamp,
+    path?: string,
+    source?: string,
+};
+
+class AccessTrackerEntry {
+    public accesses: TrackingData[];
+
+    public constructor() {
+        this.accesses = [];
+    }
+
+    public get(exists: boolean, path?: string): void {
+        this.accesses.push({
+            mode: 'get',
+            path,
+            exists,
+            time: Date.now(),
+            source: new Error().stack?.split('\n')[4],
+        });
+    }
+
+    public set(exists: boolean, path?: string): void {
+        this.accesses.push({
+            mode: 'set',
+            path,
+            exists,
+            time: Date.now(),
+            source: new Error().stack?.split('\n')[4],
+        });
+    }
+
+    public get count(): number {
+        return this.accesses.length;
+    }
+
+    public existCounts(): [number, number] {
+        const counts: [number, number] = [0, 0];
+        for (const access of this.accesses) {
+            counts[+!access.exists]++;
+        }
+        return counts;
+    }
+}
+
+class AccessTracker {
+    private accessed: Map<Record<string, unknown>, Map<string, AccessTrackerEntry>>;
+    private summary: Map<string, AccessTrackerEntry>;
+
+    public constructor(timeout = 2000) {
         this.accessed = new Map();
         this.summary = new Map();
 
-        setTimeout(() => {
-            // eslint-disable-next-line no-console
-            console.debug(this);
-            this.logSummary();
-        }, timeout);
+        // eslint-disable-next-line no-console
+        console.debug('AccessTracker initialized');
+
+        if (timeout > 0) {
+            setTimeout(() => {
+                // eslint-disable-next-line no-console
+                console.debug(this);
+                this.logSummary();
+            }, timeout);
+        }
     }
 
-    private logSummary(): void {
-        const counts: Map<string, [number, number]> = new Map();
-        let largestPropLen = 0;
+    public logSummary(): void {
+        const arr = Array.from(this.summary.entries().map(([prop, entry]) => {
+            const [ok, missing] = entry.existCounts();
 
-        for (const [obj, map] of this.accessed.entries()) {
-            for (const [prop] of map.entries()) {
-                const count = counts.get(prop) ?? [0, 0];
-                const exists = obj[prop] !== undefined;
-                count[0] += +exists;
-                count[1] += +!exists;
-                counts.set(prop, count);
-                if (prop.length > largestPropLen) {
-                    largestPropLen = prop.length;
+            const uniqueSources = new Set<string>();
+            for (const { exists, source } of entry.accesses) {
+                if (source !== undefined) {
+                    uniqueSources.add(`${exists ? 'ok' : 'undefined'} | ${source}`);
                 }
             }
-        }
 
-        const countArr = Array.from(counts.values());
-        const floorMaxLog10 = (count: number, max: number): number =>
-            Math.floor(Math.max(Math.log10(count), max));
-        const largestCounts = [
-            countArr.reduce((max, count) => floorMaxLog10(count[0], max), 0) + 1,
-            countArr.reduce((max, count) => floorMaxLog10(count[1], max), 0) + 1,
-        ];
+            return { property: prop, ok, undefined: missing, uniqueSources };
+        }));
 
-        const lines = [
-            '%cAccessTracker summary',
-            `%c${' '.repeat(largestPropLen + largestCounts[0] - 1)}OK`
-            + '%c UNDEFINED',
-        ];
-        const css = ['font-weight:bold; font-size:2em', 'color:green;', 'color:red;'];
-        for (const [prop, count] of counts.entries()) {
-            lines.push(
-                `%c${prop.padEnd(largestPropLen, ' ')}`
-                + ` %c${count[0].toString().padStart(largestCounts[0], ' ')}`
-                + ` %c${count[1].toString().padEnd(largestCounts[1], ' ')}`,
-            );
-            css.push('color:white;', 'color:green;', 'color:red;');
-        }
         // eslint-disable-next-line no-console
-        console.debug(lines.join('\n'), ...css);
+        console.table(arr);
     }
 
-    public insert(target: Record<string, unknown>, prop: string) {
+    public insert(mode: AccessMode, target: Record<string, unknown>, prop: string) {
         const exists = target[prop] !== undefined;
 
         if (!this.accessed.has(target)) {
             this.accessed.set(target, new Map());
         }
-        const map = this.accessed.get(target)!;
 
-        const entry = map.get(prop);
-        const [missing, count] = entry ?? [!exists, 0];
-        map.set(prop, [missing || !exists, count + 1]);
+        AccessTracker.register(mode, this.accessed.get(target)!, exists, prop);
+        AccessTracker.register(mode, this.summary, exists, prop);
+    }
 
-        const sEntry = this.summary.get(prop);
-        const [sMissing, sCount] = sEntry ?? [!exists, 0];
-        this.summary.set(prop, [sMissing || !exists, sCount + 1]);
-
-        if (sCount == 0 || sMissing == exists) {
-            const [log, tag, color] = sMissing
-                // eslint-disable-next-line no-console
-                ? [console.trace, '%cUNDEFINED', 'color:red']
-                // eslint-disable-next-line no-console
-                : [console.debug, '%cOK', 'color:green'];
-            log(tag, color, prop);
+    static register(
+        mode: AccessMode,
+        map: Map<string, AccessTrackerEntry>,
+        exists: boolean,
+        prop: string,
+    ): void {
+        const optEntry = map.get(prop);
+        const entry = optEntry ?? new AccessTrackerEntry();
+        entry[mode](exists);
+        if (optEntry === undefined) {
+            map.set(prop, entry);
         }
     }
 }
 
 /**
- * Debugging helper class logging all accessses to an object's properties.
+ * Debugging helper class logging all accesses to an object's properties.
  *
  * # Usage
  * ```ts
  * // accessTracker will log a summary to the console after 3000 milliseconds.
  * const accessTracker = new AccessTrackerProxy<{ a: number, b: number }>(3000);
  * const myObj = accessTracker.init({ a: 2, b: 1 });
- * console.log(myObj.a * myObj.b + myObj.a;)
+ * myObj.b = myObj.a * myObj.b + myObj.a;
+ * console.log(myObj.b);
  * ```
  */
 export class AccessTrackerProxy<T extends Record<string, unknown>> {
@@ -104,8 +135,8 @@ export class AccessTrackerProxy<T extends Record<string, unknown>> {
     public init(obj: T): T {
         const tracker = this._tracker;
         return new Proxy(obj, {
-            get(target: T, prop: string, receiver?: unknown): void {
-                tracker.insert(target, prop);
+            get(target: T, prop: string, receiver?: unknown): T[string] {
+                tracker.insert('get', target, prop);
                 if (typeof target[prop] === 'object' && target[prop] !== null) {
                     return new Proxy(
                         Reflect.get(target as object, prop, receiver),
@@ -114,6 +145,11 @@ export class AccessTrackerProxy<T extends Record<string, unknown>> {
                 } else {
                     return Reflect.get(target as object, prop, receiver);
                 }
+            },
+            set(target: T, prop: string, newValue: unknown, receiver?: unknown): boolean {
+                tracker.insert('set', target, prop);
+                Reflect.set(target as object, prop, newValue, receiver);
+                return true;
             },
         }) as T;
     }
