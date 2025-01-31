@@ -1,15 +1,14 @@
+import * as THREE from 'three';
 import proj4 from 'proj4';
 import { Binary, Info, Las } from 'copc';
 import Extent from 'Core/Geographic/Extent';
 import Fetcher from 'Provider/Fetcher';
 import LASParser from 'Parser/LASParser';
 import Source from 'Source/Source';
-import * as THREE from 'three';
 
-/**
- * @param {function(number, number):Promise<Uint8Array>} fetcher
- */
-async function getHeaders(fetcher) {
+import type { ExtraBytes } from 'copc';
+
+async function getHeaders(fetcher: (b: number, e: number) => Promise<Uint8Array>) {
     const header =
         Las.Header.parse(await fetcher(0, Las.Constants.minHeaderLength));
     const vlrs = await Las.Vlr.walk(fetcher, header);
@@ -66,7 +65,18 @@ async function getHeaders(fetcher) {
  * @property {number[]} gpsTimeRange - A 2-element tuple denoting the minimum
  * and maximum values of attribute `gpsTime`.
  */
-class CopcSource extends Source {
+class CopcSource extends Source<unknown, THREE.BufferGeometry> {
+    readonly isCopcSource: true;
+
+    fetcher: (url: string, params: RequestInit) => Promise<ArrayBuffer>;
+    parser: (data: unknown, options: unknown) => Promise<THREE.BufferGeometry>;
+
+    colorDepth: 8 | 16;
+
+    header!: Las.Header;
+    info!: Info;
+    eb!: Las.ExtraBytes[];
+
     /**
      * @param {Object} config - Source configuration
      * @param {string} config.url - URL of the COPC resource.
@@ -91,7 +101,7 @@ class CopcSource extends Source {
 
         this.colorDepth = config.colorDepth ?? 16;
 
-        const get = (/** @type {number} */ begin, /** @type {number} */ end) =>
+        const get = (begin: number, end: number) =>
             this.fetcher(this.url, {
                 ...this.networkOptions,
                 headers: {

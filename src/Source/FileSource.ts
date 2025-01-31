@@ -1,6 +1,20 @@
 import Source from 'Source/Source';
 import { LRUCache } from 'lru-cache';
 
+import type { SourceOptions } from 'Source/Source';
+
+export interface FileSourceOptions extends SourceOptions {
+    crs?: string;
+    fetchedData?: any;
+    features?: any;
+    // TODO[QB]:
+    // Either one of url + fetchedData + features
+    // URL: parser + fetcher + url
+    // FETCHEDATA: parser
+    // FEATURES:
+    url: string;
+}
+
 /**
  * An object defining the source of a single resource to get from a direct
  * access. It inherits from {@link Source}. There is multiple ways of adding a
@@ -96,21 +110,20 @@ import { LRUCache } from 'lru-cache';
  *         return view.addLayer(ariegeLayer);
  *     });
  */
-class FileSource extends Source {
+class FileSource extends Source<unknown, unknown> {
+    readonly isFileSource: true;
+
+    fetchedData: any;
+    features: any;
+
+    zoom: { min: number; max: number };
+
     /**
      * @param {Object} source - An object that can contain all properties of a
      * FileSource and {@link Source}. Only `crs` is mandatory, but if it
      * presents in `features` under the property `crs`, it is fine.
      */
-    constructor(source) {
-        if (source.parsedData) {
-            console.warn('FileSource parsedData parameter is deprecated, use features instead of.');
-            source.features = source.features || source.parsedData;
-        }
-        if (source.projection) {
-            console.warn('FileSource projection parameter is deprecated, use crs instead.');
-            source.crs = source.crs || source.projection;
-        }
+    constructor(source: FileSourceOptions) {
         if (!source.crs) {
             if (source.features && source.features.crs) {
                 source.crs = source.features.crs;
@@ -134,6 +147,7 @@ class FileSource extends Source {
         if (!this.fetchedData && !source.features) {
             this.whenReady = this.fetcher(this.urlFromExtent(), this.networkOptions).then((f) => {
                 this.fetchedData = f;
+                return this;
             });
         } else if (source.features) {
             this._featuresCaches[source.features.crs] = new LRUCache({ max: 500 });

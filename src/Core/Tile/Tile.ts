@@ -23,6 +23,12 @@ const _extent2 = new Extent('EPSG:4326');
 
 const _c = new Coordinates('EPSG:4326', 0, 0);
 
+export type TileLike = {
+    zoom: number;
+    row: number;
+    col: number;
+}
+
 class Tile {
     readonly isTile: true;
 

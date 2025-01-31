@@ -1,6 +1,24 @@
+import { LRUCache } from 'lru-cache';
+
 import Source from 'Source/Source';
 import URLBuilder from 'Provider/URLBuilder';
 import Extent from 'Core/Geographic/Extent';
+
+import type { SourceOptions } from 'Source/Source';
+import type { FeatureCollection } from 'Core/Feature';
+import type Tile from 'Core/Tile/Tile';
+
+type WFSVersion = '1.0.0' | '1.1.0' | '2.0.0' | '2.0.2';
+
+export interface WFSSourceOptions extends SourceOptions<FeatureCollection> {
+    crs: string;
+    typeName: string;
+    version?: WFSVersion;
+    // format?: string; (defined in Layer.js)
+    vendorSpecific?: Record<string, string>;
+    zoom?: { min: number; max: number };
+    bboxDigits?: number;
+}
 
 const _extent = new Extent('EPSG:4326');
 
@@ -97,17 +115,26 @@ const _extent = new Extent('EPSG:4326');
  * // Add the layer
  * view.addLayer(geometryLayer);
  */
-class WFSSource extends Source {
+class WFSSource extends Source<Extent | Tile, FeatureCollection> {
+    readonly isWFSSource: true;
+
+    typeName: string;
+    version: WFSVersion;
+    bboxDigits: number | undefined;
+    zoom: {
+        min: number;
+        max: number;
+    };
+    vendorSpecific?: Record<string, string>;
+
+    _featuresCaches: Record<string, LRUCache<string, FeatureCollection>>;
+
     /**
      * @param {Object} source - An object that can contain all properties of a
      * WFSSource and {@link Source}. `url`, `typeName` and `crs` are
      * mandatory.
      */
-    constructor(source) {
-        if (source.projection) {
-            console.warn('WFSSource projection parameter is deprecated, use crs instead.');
-            source.crs = source.crs || source.projection;
-        }
+    constructor(source: WFSSourceOptions) {
         if (!source.typeName) {
             throw new Error('source.typeName is required in wfs source.');
         }
@@ -143,35 +170,51 @@ class WFSSource extends Source {
         }
 
         this.url = decodeURIComponent(urlObj.toString());
+
+        this._featuresCaches = {};
     }
 
-    handlingError(err) {
-        if (err.response && err.response.status == 400) {
-            return err.response.text().then((text) => {
-                const getCapUrl = `${this.url}SERVICE=WFS&REQUEST=GetCapabilities&VERSION=${this.version}`;
-                const xml = new DOMParser().parseFromString(text, 'application/xml');
-                const errorElem = xml.querySelector('Exception');
-                const errorCode = errorElem.getAttribute('exceptionCode');
-                const errorMessage = errorElem.querySelector('ExceptionText').textContent;
-                console.error(`Source ${this.typeName}: bad request when fetching data. Server says: "${errorCode}: ${errorMessage}". \nReviewing ${getCapUrl} may help.`, err);
-            });
-        }
-        return super.handlingError(err);
+    loadData(extent: Extent | Tile, out: { crs: string }) {
+        // TODO[QB]: cache on top when Source#loadData will not have caching
+        // anymore
+        return super.loadData(extent, out);
     }
 
-    getDataKey(extent) {
-        if (extent.isTile) {
+    getDataKey(extent: Extent | Tile) {
+        if ('isTile' in extent) {
             return super.getDataKey(extent);
         } else {
+            // TODO[QB]: Why extent.zoom?
             return `z${extent.zoom}s${extent.south}w${extent.west}`;
         }
     }
 
-    urlFromExtent(extentOrTile) {
-        const extent = extentOrTile.isExtent ?
+    urlFromExtent(extentOrTile: Extent | Tile) {
+        const extent = 'isExtent' in extentOrTile ?
             extentOrTile.as(this.crs, _extent) :
             extentOrTile.toExtent(this.crs, _extent);
         return URLBuilder.bbox(extent, this);
+    }
+
+    onLayerAdded(options: { out: { crs: string }}) {
+        // Added new cache by crs
+        if (!this._featuresCaches[options.out.crs]) {
+            // Cache feature only if it's vector data, the feature are cached in
+            // source.
+            this._featuresCaches[options.out.crs] = new LRUCache({ max: 500 });
+        }
+    }
+
+    onLayerRemoved(options: { unusedCrs?: string } = {}) {
+        if (!options.unusedCrs) {
+            return;
+        }
+        // delete unused cache
+        const unusedCache = this._featuresCaches[options.unusedCrs];
+        if (unusedCache) {
+            unusedCache.clear();
+            delete this._featuresCaches[options.unusedCrs];
+        }
     }
 
     extentInsideLimit(extent) {

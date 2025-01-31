@@ -1,5 +1,16 @@
 import TMSSource from 'Source/TMSSource';
 
+import type { Texture } from 'three';
+import type { TMSSourceOptions } from 'Source/TMSSource';
+
+interface WMTSSourceOptions extends TMSSourceOptions {
+    name: string;
+    tileMatrixSet: string;
+    version?: string;
+    style?: string;
+    vendorSpecific?: Record<string, string>;
+}
+
 /**
  * An object defining the source of resources to get from a
  * [WMTS](http://www.opengeospatial.org/standards/wmts) server. It inherits
@@ -58,12 +69,16 @@ import TMSSource from 'Source/TMSSource';
  * // Add the layer
  * view.addLayer(colorLayer);
  */
-class WMTSSource extends TMSSource {
+class WMTSSource extends TMSSource<Texture> {
+    readonly isWMTSSource: true;
+
+    vendorSpecific?: Record<string, string>;
+
     /**
      * @param {Object} source - An object that can contain all properties of a
      * WMTSSource and {@link Source}. Only `url`, `name` and `crs` are mandatory.
      */
-    constructor(source) {
+    constructor(source: WMTSSourceOptions) {
         if (!source.name) {
             throw new Error('New WMTSSource: name is required');
         }

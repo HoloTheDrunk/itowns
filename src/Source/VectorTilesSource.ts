@@ -5,11 +5,13 @@ import URLBuilder from 'Provider/URLBuilder';
 import Fetcher from 'Provider/Fetcher';
 import urlParser from 'Parser/MapBoxUrlParser';
 
-function toTMSUrl(url) {
+import type { FeatureCollection } from 'Core/Feature';
+
+function toTMSUrl(url: string): string {
     return url.replace(/\{/g, '${');
 }
 
-function mergeCollections(collections) {
+function mergeCollections(collections: FeatureCollection[]): FeatureCollection {
     const collection = collections[0];
     collections.forEach((col, index) => {
         if (index === 0) { return; }

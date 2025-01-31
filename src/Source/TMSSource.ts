@@ -1,10 +1,32 @@
+import { LRUCache } from 'lru-cache';
+
 import Source from 'Source/Source';
 import URLBuilder from 'Provider/URLBuilder';
 import Extent from 'Core/Geographic/Extent';
-import Tile from 'Core/Tile/Tile';
+import Tile, { TileLike } from 'Core/Tile/Tile';
 import { globalExtentTMS } from 'Core/Tile/TileGrid';
 
+import type { Texture } from 'three';
+import type { ProjectionLike } from 'Core/Geographic/Crs';
+import type { SourceOptions } from 'Source/Source';
+import type { FeatureCollection } from 'Core/Feature';
+
 const _tile = new Tile('EPSG:4326', 0, 0, 0);
+
+type TMSLimit = {
+    minTileRow: number;
+    maxTileRow: number;
+    minTileCol: number;
+    maxTileCol: number;
+}
+
+export interface TMSSourceOptions extends SourceOptions<unknown>{
+    crs: ProjectionLike;
+    tileMatrixSetLimits?: Record<number, TMSLimit>;
+    tileMatrixCallback?: (level: number) => string;
+    isInverted?: boolean;
+    zoom?: { min: number; max: number };
+}
 
 /**
  * An object defining the source of resources to get from a
@@ -70,14 +92,23 @@ const _tile = new Tile('EPSG:4326', 0, 0, 0);
  * // Add the layer to the view
  * view.addLayer(imageryLayer);
  */
-class TMSSource extends Source {
+class TMSSource<T extends Texture | FeatureCollection> extends Source<TileLike, T> {
+    readonly isTMSSource: true;
+
+    zoom: { min: number; max: number };
+    isInverted: boolean;
+    tileMatrixSetLimits?: Record<number, TMSLimit>;
+    extentSetlimits: Record<string, Record<number, Extent>>;
+    tileMatrixCallback: (level: number) => string;
+
     /**
      * @param {Object} source - An object that can contain all properties of a
      * TMSSource and {@link Source}. Only `url` is mandatory.
      */
-    constructor(source) {
+    constructor(source: TMSSourceOptions) {
         source.format = source.format || 'image/png';
 
+        // TODO: Pass custom parser
         super(source);
 
         if (!source.crs) {
@@ -91,13 +122,15 @@ class TMSSource extends Source {
             this.extent = globalExtentTMS.get(source.crs);
         }
 
+        // TODO[QB]: constify
         this.zoom = source.zoom;
 
         this.isInverted = source.isInverted || false;
         this.crs = source.crs;
         this.tileMatrixSetLimits = source.tileMatrixSetLimits;
         this.extentSetlimits = {};
-        this.tileMatrixCallback = source.tileMatrixCallback || (zoomLevel => zoomLevel);
+        this.tileMatrixCallback =
+            source.tileMatrixCallback ?? ((zoomLevel: number) => zoomLevel.toString());
 
         if (!this.zoom) {
             if (this.tileMatrixSetLimits) {
@@ -116,11 +149,28 @@ class TMSSource extends Source {
         }
     }
 
-    urlFromExtent(tile) {
+    override urlFromExtent(tile: TileLike) {
         return URLBuilder.xyz(tile, this);
     }
 
-    onLayerAdded(options) {
+    override onLayerAdded(options: {
+        out: {
+            crs: string,
+            parent: { extent: Extent },
+        }
+    }) {
+        if (!this._featuresCaches[options.out.crs]) {
+            // Cache feature only if it's vector data, the feature are cached in
+            // source. It's not necessary to cache raster in Source, because
+            // it's already cached on layer.
+            this._featuresCaches[options.out.crs] =
+                this.isVectorSource ? new LRUCache({ max: 500 }) : {
+                    get() { return undefined; },
+                    set() { return this; },
+                    clear() {},
+                };
+        }
+
         super.onLayerAdded(options);
         // Build extents of the set of identical zoom tiles.
         const parent = options.out.parent;
@@ -131,14 +181,30 @@ class TMSSource extends Source {
             _tile.crs = this.crs;
             for (let i = this.zoom.max; i >= this.zoom.min; i--) {
                 const tmsl = this.tileMatrixSetLimits[i];
-                const { west, north } = _tile.set(i, tmsl.minTileRow, tmsl.minTileCol).toExtent(crs);
-                const { east, south } = _tile.set(i, tmsl.maxTileRow, tmsl.maxTileCol).toExtent(crs);
+                const { west, north } =
+                    _tile.set(i, tmsl.minTileRow, tmsl.minTileCol).toExtent(crs);
+                const { east, south } =
+                    _tile.set(i, tmsl.maxTileRow, tmsl.maxTileCol).toExtent(crs);
                 this.extentSetlimits[crs][i] = new Extent(crs, west, east, south, north);
             }
         }
     }
 
-    extentInsideLimit(extent, zoom) {
+    onLayerRemoved(options: { unusedCrs?: string } = {}) {
+        if (!options.unusedCrs) {
+            return;
+        }
+
+        // delete unused cache
+        const unusedCache = this._featuresCaches[options.unusedCrs];
+        if (unusedCache) {
+            unusedCache.clear();
+            delete this._featuresCaches[options.unusedCrs];
+        }
+    }
+
+    // TODO[QB]: is zoom redundant with extent.zoom ???
+    override extentInsideLimit(extent: TileLike, zoom: number) {
         // This layer provides data starting at level = layer.source.zoom.min
         // (the zoom.max property is used when building the url to make
         //  sure we don't use invalid levels)
