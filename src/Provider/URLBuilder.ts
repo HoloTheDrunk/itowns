@@ -1,10 +1,21 @@
+import type { ExtentLike } from 'Core/Geographic/Extent';
+import type { TileLike } from 'Core/Tile/Tile';
+
+interface TileSource {
+    url: string;
+    tileMatrixCallback: (level: number) => string;
+}
+
+interface ExtentSource {
+    url: string;
+    crs: string;
+    bboxDigits?: number;
+    axisOrder?: string;
+}
+
 let subDomainsCount = 0;
 
-/**
- * @param {string} url
- * @returns {string}
- */
-function subDomains(url) {
+function subDomains(url: string): string {
     const subDomainsPtrn = /\$\{u:([\w-_.|]+)\}/.exec(url);
 
     if (!subDomainsPtrn) {
@@ -13,7 +24,10 @@ function subDomains(url) {
 
     const subDomainsList = subDomainsPtrn[1].split('|');
 
-    return url.replace(subDomainsPtrn[0], subDomainsList[(subDomainsCount++) % subDomainsList.length]);
+    return url.replace(
+        subDomainsPtrn[0],
+        subDomainsList[(subDomainsCount++) % subDomainsList.length],
+    );
 }
 
 /**
@@ -25,8 +39,6 @@ function subDomains(url) {
  * through the following alternative each time (no random). For example
  * `https://${u:xyz.org|yzx.org|zxy.org}/${z}/${x}/${y}.png` or
  * `https://${u:a|b|c}.tile.openstreetmap.org/${z}/${x}/${y}.png`.
- *
- * @module URLBuilder
  */
 export default {
     subDomains,
@@ -58,20 +70,20 @@ export default {
      * // The resulting url is:
      * // http://server.geo/tms/15/2142/3412.jpg;
      *
-     * @param {Object} coords - tile coordinates
-     * @param {number} coords.row - tile row
-     * @param {number} coords.col - tile column
-     * @param {number} coords.zoom - tile zoom
-     * @param {Object} source
-     * @param {string} source.url
-     * @param {Function} source.tileMatrixCallback
+     * @param coords - tile coordinates
+     * @param coords.row - tile row
+     * @param coords.col - tile column
+     * @param coords.zoom - tile zoom
+     * @param source
+     * @param source.url
+     * @param source.tileMatrixCallback
      *
      * @return {string} the formed url
      */
-    xyz: function xyz(coords, source) {
+    xyz: function xyz(coords: TileLike, source: TileSource) {
         return subDomains(source.url.replace(/(\$\{z\}|%TILEMATRIX)/, source.tileMatrixCallback(coords.zoom))
-            .replace(/(\$\{y\}|%ROW)/, coords.row)
-            .replace(/(\$\{x\}|%COL)/, coords.col));
+            .replace(/(\$\{y\}|%ROW)/, coords.row.toString())
+            .replace(/(\$\{x\}|%COL)/, coords.col.toString()));
     },
 
     /**
@@ -107,7 +119,7 @@ export default {
      *
      * @return {string} the formed url
      */
-    bbox: function bbox(bbox, source) {
+    bbox: function bbox(bbox: ExtentLike, source: ExtentSource) {
         let precision = source.crs == 'EPSG:4326' ? 9 : 2;
         if (source.bboxDigits !== undefined) {
             precision = source.bboxDigits;
