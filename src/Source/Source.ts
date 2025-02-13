@@ -11,10 +11,17 @@ import Fetcher from 'Provider/Fetcher';
 import { LRUCache } from 'lru-cache';
 
 import type { ProjectionLike } from 'Core/Geographic/Crs';
-import type { FeatureCollection } from 'Core/Feature';
+import type { FeatureBuildingOptions, FeatureCollection } from 'Core/Feature';
 
 type Fetcher<T> = (url: string, header: RequestInit) => Promise<T>;
-type Parser<D, T> = (data: D, options: unknown) => Promise<T>;
+
+interface ParsingOptions<K, V> {
+    /** Data information contained in the file. */
+    in: Source<K, V>,
+    /** How the features should be built. */
+    out: FeatureBuildingOptions,
+}
+type Parser<D, K, V> = (data: D, options: ParsingOptions<K, V>) => Promise<V>;
 
 export type AttributionLike = string | string[];
 
@@ -23,7 +30,7 @@ export interface SourceOptions<V> {
     url: string;
     format: string;
     fetcher: Fetcher<unknown>;
-    parser: Parser<unknown, V>;
+    parser: Parser<unknown, unknown, V>;
     networkOptions: RequestInit;
     attribution: AttributionLike;
     extent?: Extent;
@@ -35,7 +42,7 @@ interface Cache<K, V> {
     clear(): void;
 }
 
-export const supportedParsers = new Map([
+export const supportedParsers = new Map<string, unknown>([
     ['application/geo+json', GeoJsonParser.parse],
     ['application/json', GeoJsonParser.parse],
     ['application/kml', KMLParser.parse],
@@ -46,14 +53,7 @@ export const supportedParsers = new Map([
     ['application/gdf', GDFParser.parse],
 ]);
 
-const noCache = { get: () => {}, set: a => a, clear: () => {} };
-
-/**
- * This interface describes parsing options.
- * @typedef {Object} ParsingOptions
- * @property {Source} in - data informations contained in the file.
- * @property {FeatureBuildingOptions|Layer} out - options indicates how the features should be built.
- */
+const noCache = { get: () => { }, set: (a: unknown) => a, clear: () => { } };
 
 let uid = 0;
 
@@ -63,64 +63,64 @@ let uid = 0;
  *
  * To extend a Source, it is necessary to implement two functions:
  * `urlFromExtent` and `extentInsideLimit`.
- *
- * @extends InformationsData
- *
- * @property {boolean} isSource - Used to checkout whether this source is a
- * Source. Default is true. You should not change this, as it is used internally
- * for optimisation.
- * @property {number} uid - Unique uid mainly used to store data linked to this
- * source into Cache.
- * @property {string} url - The url of the resources that are fetched.
- * @property {string} format - The format of the resources that are fetched.
- * @property {function} fetcher - The method used to fetch the resources from
- * the source. iTowns provides some methods in {@link Fetcher}, but it can be
- * specified a custom one. This method should return a `Promise` containing the
- * fetched resource. If this property is set, it overrides the chosen fetcher
- * method with `format`.
- * @property {Object} networkOptions - Fetch options (passed directly to
- * `fetch()`), see [the syntax for more information](
- * https://developer.mozilla.org/en-US/docs/Web/API/WindowOrWorkerGlobalScope/fetch#Syntax).
- * By default, set to `{ crossOrigin: 'anonymous' }`.
- * @property {string} crs - The crs projection of the resources.
- * @property {string} attribution - The intellectual property rights for the
- * resources.
- * @property {Extent} extent - The extent of the resources.
- * @property {function} parser - The method used to parse the resources attached
- * to the layer. iTowns provides some parsers, visible in the `Parser/` folder.
- * If the method is custom, it should return a `Promise` containing the parsed
- * resource. If this property is set, it overrides the default selected parser
- * method with `source.format`. If `source.format` is also empty, no parsing
- * action is done.
- * <br><br>
- * When calling this method, two parameters are passed:
- * <ul>
- *  <li>the fetched data, i.e. the data to parse</li>
- *  <li>an {@link ParsingOptions}  containing severals properties, set when this method is
- *  called: it is specific to each call, so the value of each property can vary
- *  depending on the current fetched tile for example</li>
- * </ul>
  */
-class Source<K, V> {
+class Source<K extends { [prop in 'zoom' | 'row' | 'col']: number }, V> {
+    /**
+     * Indicates whether this source is a Source. Default is true. You should
+     * not change this, as it is used internally for optimisation.
+     */
     readonly isSource: true;
+    /** Indicates whether this source produces vector data. Default is false */
     isVectorSource: boolean;
 
+    /** The crs projection of the resources. */
     crs: ProjectionLike;
 
+    /** Unique uid used to store data linked to this source into Cache. */
     uid: number;
+    /** The url of the resources that are fetched. */
     url: string;
+    /** The format of the resources that are fetched. */
     format: string;
 
+    /**
+     * The method used to fetch the resources from the source. iTowns provides
+     * some methods in {@link Fetcher}, but it can be specified a custom one.
+     * This method should return a `Promise` containing the fetched resource.
+     * If this property is set, it overrides the chosen fetcher method with
+     * `format`.
+     */
     protected fetcher: Fetcher<unknown>;
-    protected parser: Parser<unknown, V>;
+    /**
+     * The method used to parse the resources attached to the layer. iTowns
+     * provides some parsers, visible in the `Parser/` folder. If the method is
+     * custom, it should return a `Promise` containing the parsed resource. If
+     * this property is set, it overrides the default selected parser method
+     * with `source.format`. If `source.format` is also empty, no parsing action
+     * is done.
+     *
+     * When calling this method, two parameters are passed:
+     *  - the fetched data, i.e. the data to parse
+     *  - a {@link ParsingOptions} containing severals properties, set when this
+     *    method is called: it is specific to each call, so the value of each
+     *    property can vary depending on the current fetched tile for example
+     */
+    protected parser: Parser<unknown, K, V>;
+
+    /**
+     * Fetch options (passed directly to `fetch()`), see [the syntax for more information](https://developer.mozilla.org/en-US/docs/Web/API/WindowOrWorkerGlobalScope/fetch#Syntax).
+     * By default, set to `{ crossOrigin: 'anonymous' }`.
+     */
     networkOptions: RequestInit;
+    /** The intellectual property rights for the resources. */
     attribution: AttributionLike;
     whenReady: Promise<this>;
     _featuresCaches: Record<string, Cache<string, FeatureCollection>>;
+    /** The extent of the resources. */
     extent?: Extent;
 
     /**
-     * @param {Object} source - An object that can contain all properties of a
+     * @param source - An object that can contain all properties of a
      * Source. Only the `url` property is mandatory.
      */
     constructor(source: SourceOptions<V>) {
@@ -138,8 +138,13 @@ class Source<K, V> {
 
         this.url = source.url;
         this.format = source.format;
-        this.fetcher = source.fetcher || Fetcher.get(source.format);
-        this.parser = source.parser || supportedParsers.get(source.format) || ((d, opt) => { d.extent = opt.extent; return d; });
+        this.fetcher = source.fetcher ?? Fetcher.get(source.format);
+        this.parser = source.parser
+            ?? supportedParsers.get(source.format)
+            ?? (<D extends { extent: Extent }, O extends { extent: Extent }>(data: D, opt: O) => {
+                data.extent = opt.extent;
+                return data;
+            });
         this.isVectorSource = (source.parser || supportedParsers.get(source.format)) != undefined;
         this.networkOptions = source.networkOptions || { crossOrigin: 'anonymous' };
         this.attribution = source.attribution;
@@ -157,29 +162,24 @@ class Source<K, V> {
     }
 
     /**
-     * Generates an url from an extent. This url is a link to fetch the
+     * Generates a url from an extent. This url is a link to fetch the
      * resources inside the extent.
-     *
-     * @param {Extent} extent - Extent to convert in url.
-
-     * @return {string} The URL constructed from the extent.
      */
-    // eslint-disable-next-line
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     urlFromExtent(extent: K): string {
         throw new Error('In extended Source, you have to implement the method urlFromExtent!');
     }
 
-    getDataKey(extent: any) {
+    getDataKey(extent: K): string {
         return `z${extent.zoom}r${extent.row}c${extent.col}`;
     }
 
     /**
-     * Load  data from cache or Fetch/Parse data.
+     * Load  data from cache or fetch and parse data.
      * The loaded data is a Feature or Texture.
      *
-     * @param      {Extent}  extent   extent requested parsed data.
-     * @param      {FeatureBuildingOptions|Layer}  out     The feature returned options
-     * @return     {FeatureCollection|Texture}  The parsed data.
+     * @param      extent - extent requested parsed data.
+     * @param      out - The feature returned options
      */
     loadData(extent: K, out: { crs: string } & unknown): Promise<V> {
         const cache = this._featuresCaches[out.crs];
@@ -203,7 +203,7 @@ class Source<K, V> {
      *
      * @param {object} options
      */
-    onLayerAdded(options: { out: { crs: ProjectionLike }}) {
+    onLayerAdded(options: { out: { crs: ProjectionLike } }) {
         // Added new cache by crs
         if (!this._featuresCaches[options.out.crs]) {
             // Cache feature only if it's vector data, the feature are cached in source.
