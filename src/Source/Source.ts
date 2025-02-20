@@ -11,7 +11,7 @@ import Fetcher from 'Provider/Fetcher';
 import { LRUCache } from 'lru-cache';
 
 import type { ProjectionLike } from 'Core/Geographic/Crs';
-import type { FeatureBuildingOptions, FeatureCollection } from 'Core/Feature';
+import type { FeatureBuildingOptions } from 'Core/Feature';
 
 type Fetcher<T> = (url: string, header: RequestInit) => Promise<T>;
 
@@ -20,6 +20,7 @@ interface ParsingOptions<K, V> {
     in: Source<K, V>,
     /** How the features should be built. */
     out: FeatureBuildingOptions,
+    extent: K,
 }
 type Parser<D, K, V> = (data: D, options: ParsingOptions<K, V>) => Promise<V>;
 
@@ -36,12 +37,6 @@ export interface SourceOptions<V> {
     extent?: Extent;
 }
 
-interface Cache<K, V> {
-    get(key: K): V | undefined;
-    set(key: K, value: V): this;
-    clear(): void;
-}
-
 export const supportedParsers = new Map<string, unknown>([
     ['application/geo+json', GeoJsonParser.parse],
     ['application/json', GeoJsonParser.parse],
@@ -53,7 +48,7 @@ export const supportedParsers = new Map<string, unknown>([
     ['application/gdf', GDFParser.parse],
 ]);
 
-const noCache = { get: () => { }, set: (a: unknown) => a, clear: () => { } };
+const noCache = { get: () => {}, set: (a: unknown) => a, clear: () => {} };
 
 let uid = 0;
 
@@ -64,14 +59,12 @@ let uid = 0;
  * To extend a Source, it is necessary to implement two functions:
  * `urlFromExtent` and `extentInsideLimit`.
  */
-class Source<K extends { [prop in 'zoom' | 'row' | 'col']: number }, V> {
+abstract class Source<K, V> {
     /**
      * Indicates whether this source is a Source. Default is true. You should
      * not change this, as it is used internally for optimisation.
      */
     readonly isSource: true;
-    /** Indicates whether this source produces vector data. Default is false */
-    isVectorSource: boolean;
 
     /** The crs projection of the resources. */
     crs: ProjectionLike;
@@ -115,7 +108,6 @@ class Source<K extends { [prop in 'zoom' | 'row' | 'col']: number }, V> {
     /** The intellectual property rights for the resources. */
     attribution: AttributionLike;
     whenReady: Promise<this>;
-    _featuresCaches: Record<string, Cache<string, FeatureCollection>>;
     /** The extent of the resources. */
     extent?: Extent;
 
@@ -145,11 +137,9 @@ class Source<K extends { [prop in 'zoom' | 'row' | 'col']: number }, V> {
                 data.extent = opt.extent;
                 return data;
             });
-        this.isVectorSource = (source.parser || supportedParsers.get(source.format)) != undefined;
         this.networkOptions = source.networkOptions || { crossOrigin: 'anonymous' };
         this.attribution = source.attribution;
         this.whenReady = Promise.resolve(this);
-        this._featuresCaches = {};
         if (source.extent && !(source.extent.isExtent)) {
             this.extent = new Extent(this.crs).setFromExtent(source.extent);
         } else {
@@ -157,7 +147,7 @@ class Source<K extends { [prop in 'zoom' | 'row' | 'col']: number }, V> {
         }
     }
 
-    handlingError(err: Error) {
+    handlingError(err: Error): never {
         throw err;
     }
 
@@ -166,66 +156,35 @@ class Source<K extends { [prop in 'zoom' | 'row' | 'col']: number }, V> {
      * resources inside the extent.
      */
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    urlFromExtent(extent: K): string {
-        throw new Error('In extended Source, you have to implement the method urlFromExtent!');
-    }
+    abstract urlFromExtent(extent: K): string;
 
-    getDataKey(extent: K): string {
-        return `z${extent.zoom}r${extent.row}c${extent.col}`;
-    }
+    /** Converts the desired Source key object to a cache key string. */
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    abstract getDataKey(extent: K): string;
+    // NOTE: default case was `z${extent.zoom}r${extent.row}c${extent.col}`;
 
     /**
-     * Load  data from cache or fetch and parse data.
+     * Load data from cache or fetch and parse data.
      * The loaded data is a Feature or Texture.
      *
      * @param      extent - extent requested parsed data.
      * @param      out - The feature returned options
      */
-    loadData(extent: K, out: { crs: string } & unknown): Promise<V> {
-        const cache = this._featuresCaches[out.crs];
-        const key = this.getDataKey(extent);
-        // console.log('Source.loadData', key);
-        // try to get parsed data from cache
-        let features = cache.get(key);
-        if (!features) {
-            // otherwise fetch/parse the data
-            features = this.fetcher(this.urlFromExtent(extent), this.networkOptions)
-                .then(file => this.parser(file, { out, in: this, extent }))
-                .catch(err => this.handlingError(err));
-
-            cache.set(key, features);
-        }
-        return features;
-    }
-
-    /**
-     * Called when layer added.
-     *
-     * @param {object} options
-     */
-    onLayerAdded(options: { out: { crs: ProjectionLike } }) {
-        // Added new cache by crs
-        if (!this._featuresCaches[options.out.crs]) {
-            // Cache feature only if it's vector data, the feature are cached in source.
-            // It's not necessary to cache raster in Source,
-            // because it's already cached on layer.
-            this._featuresCaches[options.out.crs] = this.isVectorSource ? new LRUCache({ max: 500 }) : noCache;
+    async loadData(extent: K, out: FeatureBuildingOptions): Promise<V> {
+        // Fetch and parse the data
+        try {
+            const file = await this.fetcher(this.urlFromExtent(extent), this.networkOptions);
+            return await this.parser(file, { out, in: this, extent });
+        } catch (err) {
+            return this.handlingError(err as Error);
         }
     }
 
-    /**
-     * Called when layer removed.
-     *
-     * @param {options}  [options={}] options
-     */
-    onLayerRemoved(options: any = {}) {
-        // delete unused cache
-        const unusedCache = this._featuresCaches[options.unusedCrs];
-        if (unusedCache) {
-            unusedCache.clear();
-            delete this._featuresCaches[options.unusedCrs];
-        }
-    }
+    /** Called when a layer is added. */
+    abstract onLayerAdded(options: { out: { crs: ProjectionLike } }): void;
+
+    /** Called when a layer is removed. */
+    abstract onLayerRemoved(options: { unusedCrs: string }): void;
 
     /**
      * Tests if an extent is inside the source limits.
@@ -234,9 +193,7 @@ class Source<K extends { [prop in 'zoom' | 'row' | 'col']: number }, V> {
      * @returns True if the extent is inside the limit, false otherwise.
      */
     // eslint-disable-next-line
-    extentInsideLimit(extent: K) {
-        throw new Error('In extented Source, you have to implement the method extentInsideLimit!');
-    }
+    abstract extentInsideLimit(extent: K): boolean;
 }
 
 export default Source;

@@ -93,6 +93,8 @@ export { default as OGC3DTilesIonSource } from 'Source/OGC3DTilesIonSource';
 export { default as OGC3DTilesGoogleSource } from 'Source/OGC3DTilesGoogleSource';
 export { default as EntwinePointTileSource } from 'Source/EntwinePointTileSource';
 export { default as CopcSource } from 'Source/CopcSource';
+export { VectorSource } from 'Source/VectorSource';
+export { TMSVectorSource } from 'Source/TMSVectorSource';
 
 // Parsers provided by default in iTowns
 // Custom parser can be implemented as wanted, as long as the main function
