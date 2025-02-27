@@ -70,11 +70,11 @@ abstract class Source<K, V> {
     crs: ProjectionLike;
 
     /** Unique uid used to store data linked to this source into Cache. */
-    uid: number;
+    protected uid: number;
     /** The url of the resources that are fetched. */
-    url: string;
+    public url: string;
     /** The format of the resources that are fetched. */
-    format: string;
+    public format: string;
 
     /**
      * The method used to fetch the resources from the source. iTowns provides
@@ -104,18 +104,18 @@ abstract class Source<K, V> {
      * Fetch options (passed directly to `fetch()`), see [the syntax for more information](https://developer.mozilla.org/en-US/docs/Web/API/WindowOrWorkerGlobalScope/fetch#Syntax).
      * By default, set to `{ crossOrigin: 'anonymous' }`.
      */
-    networkOptions: RequestInit;
+    public networkOptions: RequestInit;
     /** The intellectual property rights for the resources. */
-    attribution: AttributionLike;
-    whenReady: Promise<this>;
+    public attribution: AttributionLike;
+    public whenReady: Promise<this>;
     /** The extent of the resources. */
-    extent?: Extent;
+    public extent?: Extent;
 
     /**
      * @param source - An object that can contain all properties of a
      * Source. Only the `url` property is mandatory.
      */
-    constructor(source: SourceOptions<V>) {
+    public constructor(source: SourceOptions<V>) {
         if (source.crs) {
             CRS.isValid(source.crs);
         }
@@ -147,7 +147,7 @@ abstract class Source<K, V> {
         }
     }
 
-    handlingError(err: Error): never {
+    protected handlingError(err: Error): never {
         throw err;
     }
 
@@ -155,13 +155,10 @@ abstract class Source<K, V> {
      * Generates a url from an extent. This url is a link to fetch the
      * resources inside the extent.
      */
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    abstract urlFromExtent(extent: K): string;
+    public abstract urlFromExtent(extent: K): string;
 
     /** Converts the desired Source key object to a cache key string. */
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    abstract getDataKey(extent: K): string;
-    // NOTE: default case was `z${extent.zoom}r${extent.row}c${extent.col}`;
+    public abstract getDataKey(extent: K): string;
 
     /**
      * Load data from cache or fetch and parse data.
@@ -170,7 +167,7 @@ abstract class Source<K, V> {
      * @param      extent - extent requested parsed data.
      * @param      out - The feature returned options
      */
-    async loadData(extent: K, out: FeatureBuildingOptions): Promise<V> {
+    public async loadData(extent: K, out: FeatureBuildingOptions): Promise<V> {
         // Fetch and parse the data
         try {
             const file = await this.fetcher(this.urlFromExtent(extent), this.networkOptions);
@@ -181,19 +178,25 @@ abstract class Source<K, V> {
     }
 
     /** Called when a layer is added. */
-    abstract onLayerAdded(options: { out: { crs: ProjectionLike } }): void;
+    public abstract onLayerAdded(options: {
+        out: {
+            crs: string,
+            parent: { extent: Extent },
+        }
+    }): void;
 
     /** Called when a layer is removed. */
-    abstract onLayerRemoved(options: { unusedCrs: string }): void;
+    public abstract onLayerRemoved(options: { unusedCrs: string }): void;
 
     /**
      * Tests if an extent is inside the source limits.
      *
      * @param extent - Extent to test.
-     * @returns True if the extent is inside the limit, false otherwise.
+     * @param zoom - Zoom or level to use for the limit.
+     *
+     * @returns `true` if the extent is inside the limit, `false` otherwise.
      */
-    // eslint-disable-next-line
-    abstract extentInsideLimit(extent: K): boolean;
+    public abstract extentInsideLimit(extent: Extent, zoom: number): boolean;
 }
 
 export default Source;

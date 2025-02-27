@@ -1,12 +1,12 @@
 import type { ExtentLike } from 'Core/Geographic/Extent';
 import type { TileLike } from 'Core/Tile/Tile';
 
-interface TileSource {
+export interface TileSource {
     url: string;
     tileMatrixCallback: (level: number) => string;
 }
 
-interface ExtentSource {
+export interface ExtentSource {
     url: string;
     crs: string;
     bboxDigits?: number;
