@@ -8,7 +8,6 @@ import GTXParser from 'Parser/GTXParser';
 import ISGParser from 'Parser/ISGParser';
 import VectorTileParser from 'Parser/VectorTileParser';
 import Fetcher from 'Provider/Fetcher';
-import { LRUCache } from 'lru-cache';
 
 import type { ProjectionLike } from 'Core/Geographic/Crs';
 import type { FeatureBuildingOptions } from 'Core/Feature';
@@ -47,8 +46,6 @@ export const supportedParsers = new Map<string, unknown>([
     ['application/isg', ISGParser.parse],
     ['application/gdf', GDFParser.parse],
 ]);
-
-const noCache = { get: () => {}, set: (a: unknown) => a, clear: () => {} };
 
 let uid = 0;
 

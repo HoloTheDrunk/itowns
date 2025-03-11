@@ -1,6 +1,6 @@
 import { featureFilter } from '@maplibre/maplibre-gl-style-spec';
 import StyleOptions from 'Core/StyleOptions';
-import TMSSource from 'Source/TMSSource';
+import { TMSVectorSource } from 'Source/TMSSource';
 import URLBuilder from 'Provider/URLBuilder';
 import Fetcher from 'Provider/Fetcher';
 import urlParser from 'Parser/MapBoxUrlParser';
@@ -41,7 +41,7 @@ function getPropertiesFromRefLayer(layers, layer) {
  * @property {boolean} [symbolToCircle=false] - If true, all symbols from a tile
  * will be considered as circle, and render as circles.
  */
-class VectorTilesSource extends TMSSource {
+class VectorTilesSource extends TMSVectorSource {
     /**
      * @param {Object} source - An object that can contain all properties of a
      * VectorTilesSource and {@link Source}.

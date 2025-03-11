@@ -149,7 +149,7 @@ class Layer extends THREE.EventDispatcher {
          * @type {number}
          */
         this.subdivisionThreshold = subdivisionThreshold;
-        this.sizeDiagonalTexture =  (2 * (this.subdivisionThreshold * this.subdivisionThreshold)) ** 0.5;
+        this.sizeDiagonalTexture = (2 * (this.subdivisionThreshold * this.subdivisionThreshold)) ** 0.5;
 
         this.addLabelLayer = addLabelLayer;
 
@@ -189,7 +189,9 @@ class Layer extends THREE.EventDispatcher {
             this._reject = rj;
         }).then(() => {
             this.ready = true;
-            this.source.onLayerAdded({ out: this });
+            if (this.source.onLayerAdded !== undefined) {
+                this.source.onLayerAdded({ out: this });
+            }
             return this;
         });
 

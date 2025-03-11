@@ -24,7 +24,8 @@ function refinementCommandCancellationFn(cmd) {
 
     // Cancel the command if the layer was removed between command scheduling and command execution
     if (!cmd.requester.layerUpdateState[cmd.layer.id]
-        || !cmd.layer.source._featuresCaches[cmd.layer.crs]) {
+        || cmd.layer.source._featuresCaches !== undefined
+        && !cmd.layer.source._featuresCaches[cmd.layer.crs]) {
         return true;
     }
 
@@ -190,8 +191,8 @@ export function updateLayeredMaterialNodeElevation(context, layer, node, parent)
 
     // Possible conditions to *not* update the elevation texture
     if (layer.frozen ||
-            !material.visible ||
-            !node.layerUpdateState[layer.id].canTryUpdate()) {
+        !material.visible ||
+        !node.layerUpdateState[layer.id].canTryUpdate()) {
         return;
     }
 

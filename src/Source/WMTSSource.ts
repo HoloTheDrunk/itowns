@@ -1,9 +1,9 @@
-import TMSSource from 'Source/TMSSource';
+import { TMSRasterSource } from 'Source/TMSSource';
 
 import type { Texture } from 'three';
 import type { TMSSourceOptions } from 'Source/TMSSource';
 
-interface WMTSSourceOptions extends TMSSourceOptions {
+interface WMTSSourceOptions extends TMSSourceOptions<Texture> {
     name: string;
     tileMatrixSet: string;
     version?: string;
@@ -69,7 +69,7 @@ interface WMTSSourceOptions extends TMSSourceOptions {
  * // Add the layer
  * view.addLayer(colorLayer);
  */
-class WMTSSource extends TMSSource<Texture> {
+class WMTSSource extends TMSRasterSource {
     readonly isWMTSSource: true;
 
     vendorSpecific?: Record<string, string>;
