@@ -485,7 +485,7 @@ class View extends THREE.EventDispatcher {
      * view.getLayers(layer => layer.isGeometryLayer);
      * // get one layer with id
      * view.getLayers(layer => layer.id === 'itt');
-     * @param {function(Layer):boolean} filter
+     * @param {function(Layer, Layer?): boolean} filter
      * @returns {Array<Layer>}
      */
     getLayers(filter) {
@@ -979,7 +979,7 @@ class View extends THREE.EventDispatcher {
      * @param {THREE.RenderTarget?} buffer - If null, a Uint8 buffer is created matching the previous params.
      * @returns {THREE.RenderTarget} The provided buffer or a newly created one, filled with the depth buffer data.
      */
-    readDepthBuffer(x, y, width, height, buffer) {
+    async readDepthBuffer(x, y, width, height, buffer) {
         const g = this.mainLoop.gfxEngine;
         const currentWireframe = this.tileLayer.wireframe;
         const currentOpacity = this.tileLayer.opacity;
@@ -994,7 +994,7 @@ class View extends THREE.EventDispatcher {
             this.tileLayer.visible = true;
         }
 
-        buffer = RenderMode.scope(this.tileLayer.level0Nodes, RenderMode.MODES.DEPTH, () => g.renderViewToBuffer(
+        buffer = await RenderMode.scope(this.tileLayer.level0Nodes, RenderMode.MODES.DEPTH, async () => g.renderViewToBuffer(
             { camera: this.camera, scene: this.tileLayer.object3d },
             { x, y, width, height, buffer },
         ));
@@ -1017,11 +1017,10 @@ class View extends THREE.EventDispatcher {
      * This position is computed with depth buffer.
      *
      * @param      {THREE.Vector2}  mouse  position in view coordinates (in pixel), if it's null so it's view's center.
-     * @param      {THREE.Vector3}  [target=THREE.Vector3()] target. the result will be copied into this Vector3. If not present a new one will be created.
-     * @return     {THREE.Vector3}  the world position on the terrain in view's crs: referenceCrs.
+     * @param      {THREE.Vector3}  [target=THREE.Vector3()] the result will be copied into this Vector3. If not provided, a new one will be created.
+     * @return     {Promise<THREE.Vector3>}  the world position on the terrain in view's crs: referenceCrs.
      */
-
-    getPickingPositionFromDepth(mouse, target = new THREE.Vector3()) {
+    async getPickingPositionFromDepth(mouse, target = new THREE.Vector3()) {
         if (!this.tileLayer || this.tileLayer.level0Nodes.length == 0 || (!this.tileLayer.level0Nodes[0])) {
             target = undefined;
             return;
@@ -1045,7 +1044,7 @@ class View extends THREE.EventDispatcher {
             const id = ((dim.y - mouse.y - 1) * dim.x + mouse.x) * 4;
             buffer = this.#fullSizeDepthBuffer.slice(id, id + 4);
         } else {
-            buffer = this.readDepthBuffer(mouse.x, mouse.y, 1, 1, this.#pixelDepthBuffer);
+            buffer = await this.readDepthBuffer(mouse.x, mouse.y, 1, 1, this.#pixelDepthBuffer);
         }
 
         screen.x = (mouse.x / dim.x) * 2 - 1;

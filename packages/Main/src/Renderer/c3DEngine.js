@@ -159,10 +159,10 @@ class c3DEngine {
      * @param {number} zone.y - y (in view coordinate)
      * @param {number} zone.width - width of area to render (in pixels)
      * @param {number} zone.height - height of area to render (in pixels)
-     * @return {THREE.RenderTarget} - Uint8Array, 4 bytes per pixel. The first pixel in
-     * the array is the bottom-left pixel.
+     * @return {Promise<TypedArray>} - Uint8Array, 4 bytes per pixel. The first pixel in
+     * the array is the bottom-left pixel. The resolve provides the read data as a typed array.
      */
-    renderViewToBuffer(view, zone) {
+    async renderViewToBuffer(view, zone) {
         if (!zone) {
             zone = {
                 x: 0,
@@ -176,11 +176,9 @@ class c3DEngine {
 
         this.renderViewToRenderTarget(view, this.fullSizeRenderTarget, zone);
 
-        this.renderer.readRenderTargetPixels(
+        return this.renderer.readRenderTargetPixelsAsync(
             this.fullSizeRenderTarget,
             zone.x, this.height - (zone.y + zone.height), zone.width, zone.height, zone.buffer);
-
-        return zone.buffer;
     }
 
     /**
