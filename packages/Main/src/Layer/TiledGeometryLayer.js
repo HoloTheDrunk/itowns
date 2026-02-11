@@ -196,10 +196,10 @@ class TiledGeometryLayer extends GeometryLayer {
      * @param {number} radius - Radius of the picking circle.
      * @param {Array} target - Array to push picking result.
      *
-     * @return {Array} An array containing all targets picked under the
+     * @return {Promise<Array>} An array containing all targets picked under the
      * specified coordinates.
      */
-    pickObjectsAt(view, coordinates, radius = this.options.defaultPickingRadius, target = []) {
+    async pickObjectsAt(view, coordinates, radius = this.options.defaultPickingRadius, target = []) {
         return Picking.pickTilesAt(view, coordinates, radius, this, target);
     }
 

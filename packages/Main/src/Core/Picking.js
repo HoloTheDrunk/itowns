@@ -5,13 +5,20 @@ import { Coordinates } from '@itowns/geographic';
 
 const depthRGBA = new THREE.Vector4();
 // TileMesh picking support function
-function screenCoordsToNodeId(view, tileLayer, viewCoords, radius = 0) {
+/**
+ * @param {View} view
+ * @param {Layer} tileLayer
+ * @param {THREE.Vector2} viewCoords
+ * @param {number?} radius
+ * @return {number[]}
+ */
+async function screenCoordsToNodeId(view, tileLayer, viewCoords, radius = 0) {
     const dim = view.mainLoop.gfxEngine.getWindowSize();
 
     viewCoords = viewCoords || new THREE.Vector2(Math.floor(dim.x / 2), Math.floor(dim.y / 2));
 
     /** @type THREE.RenderTarget */
-    const buffer = RenderMode.scope(tileLayer.level0Nodes, RenderMode.MODES.ID, () => view.mainLoop.gfxEngine.renderViewToBuffer(
+    const buffer = await RenderMode.scope(tileLayer.level0Nodes, RenderMode.MODES.ID, () => view.mainLoop.gfxEngine.renderViewToBuffer(
         { camera: view.camera, scene: tileLayer.object3d },
         {
             x: viewCoords.x - radius,
@@ -101,8 +108,16 @@ const cameraPosCoord = new Coordinates('EPSG:4978'); // default crs, will be set
  *   - layer: the geometry layer used for picking
  */
 export default {
-    pickTilesAt(view, viewCoords, radius, layer, results = []) {
-        const _ids = screenCoordsToNodeId(view, layer, viewCoords, radius);
+    /**
+     * @param {View} view
+     * @param {THREE.Vector2} viewCoords
+     * @param {number} radius
+     * @param {Layer} layer
+     * @param {{object: TileMesh, layer: Layer}} results
+     * @return {Promise<unknown>}
+     */
+    async pickTilesAt(view, viewCoords, radius, layer, results = []) {
+        const _ids = await screenCoordsToNodeId(view, layer, viewCoords, radius);
 
         const extractResult = (node) => {
             if (_ids.includes(node.id) && node.isTileMesh) {
