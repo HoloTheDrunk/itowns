@@ -19,6 +19,8 @@ import {
 } from 'postprocessing';
 import View from 'Core/View';
 
+type SkyIntensityFunc = (angle: number, elevation: number) => number;
+
 class SkyManager {
     sky: THREE.Mesh;
     skyLight: SkyLightProbe;
@@ -31,8 +33,9 @@ class SkyManager {
     view: View;
 
     public date: Date;
+    public intensity: SkyIntensityFunc;
 
-    constructor(view: View) {
+    constructor(view: View, intensity?: SkyIntensityFunc) {
         this.view = view;
         const scene = view.scene;
         this.scene = scene;
@@ -52,6 +55,7 @@ class SkyManager {
         this.skyLight.position.copy(camera.position);
 
         this.date = new Date(); // now
+        this.intensity = intensity ?? (() => 1);
 
         // SunDirectionalLight computes sunlight transmittance
         // to its target position.
@@ -118,7 +122,7 @@ class SkyManager {
 
         this.sky.updateMatrixWorld();
 
-        const skyMaterial = <SkyMaterial> this.sky.material;
+        const skyMaterial = <SkyMaterial>this.sky.material;
         skyMaterial.sunDirection.copy(sunDirection);
         skyMaterial.moonDirection.copy(moonDirection);
 
@@ -143,6 +147,16 @@ class SkyManager {
         // necessary for Three to compute the light direction
         this.sunLight.updateMatrixWorld();
         this.sunLight.target.updateMatrixWorld();
+
+        const worldPos = camera.getWorldPosition(new THREE.Vector3());
+        // const surfaceNormal = worldPos.normalize();
+        // const angle = camera.up.angleTo(surfaceNormal);
+        console.log(worldPos);
+
+        // this.sunLight.intensity = this.intensity(angle);
+
+        this.sunLight.update();
+
         this.skyLight.updateMatrixWorld();
     }
 
