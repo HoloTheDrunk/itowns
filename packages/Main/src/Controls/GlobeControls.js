@@ -291,7 +291,7 @@ class GlobeControls extends THREE.EventDispatcher {
         const stateToHandler = [
             [this.states.ORBIT, this._onRotation], /*     */[this.states.MOVE_GLOBE, this._onDrag],
             [this.states.DOLLY, this._onDolly], /*        */[this.states.PAN, this._onPan],
-            [this.states.PANORAMIC, this._onPanoramic], /**/[this.states.ZOOM._event, this._onZoom],
+            [this.states.PANORAMIC, this._onPanoramic], /**/[this.states.ZOOM, this._onZoom],
             [this.states.TRAVEL_IN, this._onTravel], /*   */[this.states.TRAVEL_OUT, this._onTravel],
         ];
         for (const [state, handler] of stateToHandler) {
