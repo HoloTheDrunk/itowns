@@ -287,7 +287,7 @@ class GlobeControls extends THREE.EventDispatcher {
         this.states.addEventListener('state-changed', this._onStateChange, false);
 
         /** @import { State } from 'Controls/StateControl' */
-        /** @type [State, (event: any) => void][] */
+        /** @type {[State, (event: any) => void][]} */
         const stateToHandler = [
             [this.states.ORBIT, this._onRotation], /*     */[this.states.MOVE_GLOBE, this._onDrag],
             [this.states.DOLLY, this._onDolly], /*        */[this.states.PAN, this._onPan],
@@ -786,8 +786,7 @@ class GlobeControls extends THREE.EventDispatcher {
             return this.lookAtCoordinate({       // update view to the interpolate point
                 coord: point,
                 range,
-            },
-                false);
+            }, false);
         }
     }
 

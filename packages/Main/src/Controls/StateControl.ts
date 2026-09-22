@@ -1,6 +1,23 @@
 import type View from 'Core/View';
 import * as THREE from 'three';
 
+// Helper because Object.entries erases key type information
+export function objectEntries<
+    T extends Record<PropertyKey, unknown>,
+    K extends keyof T,
+    V extends T[K],
+>(o: T) {
+    return Object.entries(o) as [K, Exclude<V, undefined>][];
+}
+
+// Helper because Object.keys erases key type information
+export function objectKeys<
+    T extends Record<PropertyKey, unknown>,
+    K extends keyof T,
+>(o: T) {
+    return Object.keys(o) as K[];
+}
+
 const CONTROL_KEYS = {
     LEFT: 37,
     UP: 38,
@@ -17,11 +34,13 @@ type CONTROL_KEYS = typeof CONTROL_KEYS[keyof typeof CONTROL_KEYS];
 interface StateOptions {
     mouseButton: THREE.MOUSE;
     keyboard: CONTROL_KEYS;
-    finger: 1 | 2 | 3,
+    finger: 1 | 2 | 3;
     double: boolean;
-    trigger: boolean,
-    direction: string,
+    trigger: boolean;
+    direction: string;
 }
+
+export type Event = 'drag' | 'rotate' | 'pan' | 'dolly' | 'panoramic' | 'travel_out' | 'travel_in' | 'zoom';
 
 export class State {
     public enable: boolean;
@@ -37,7 +56,7 @@ export class State {
     private _direction?: string;
 
     public constructor(
-        private _event: 'drag' | 'rotate' | 'pan' | 'dolly' | 'panoramic' | 'travel_out' | 'travel_in' | 'zoom' | null,
+        private _event: Event | null,
         options: Partial<StateOptions> = {},
     ) {
         this.enable = true;
@@ -104,74 +123,75 @@ const DEFAULT_STATES = {
     ZOOM: new State('zoom', {
         trigger: true,
     }),
-}
-
-// Helper because Object.entries erases key type information
-export function objectEntries<
-    T extends Record<PropertyKey, unknown>,
-    K extends keyof T,
-    V extends T[K]
->(o: T) {
-    return Object.entries(o) as [K, V][];
-}
-
-export function objectKeys<
-    T extends Record<PropertyKey, unknown>,
-    K extends keyof T,
->(o: T) {
-    return Object.keys(o) as K[];
-}
-
+};
 
 const viewCoords = new THREE.Vector2();
+
+interface StateControlEvents {
+    'state-changed': { viewCoords: THREE.Vector2; previous: State };
+    rotate: { viewCoords: THREE.Vector2 };
+    drag: { viewCoords: THREE.Vector2 };
+    dolly: { viewCoords: THREE.Vector2 };
+    pan: { viewCoords: THREE.Vector2 };
+    panoramic: { viewCoords: THREE.Vector2 };
+    // NOTE: When adding a new trigger event, also add it to the cast in inputToState.
+    travel_in: { viewCoords?: THREE.Vector2; direction?: string };
+    travel_out: { viewCoords?: THREE.Vector2; direction?: string };
+    zoom: { viewCoords?: THREE.Vector2; direction?: string; delta?: number };
+};
 
 /**
  * It represents the control's states.
  * Each {@link State} is a control mode of the camera and how to interact with
  * the interface to activate this mode.
- * @class StateControl
- *
- * @property {boolean}  enable      Defines whether all input will be communicated to the associated `Controls` or not.
- * Default is true.
- * @property {boolean}  enableKeys  Defines whether keyboard input will be communicated to the associated `Controls` or
- * not. Default is true.
  */
-class StateControl extends THREE.EventDispatcher<{ type: string; viewCoords: THREE.Vector2; previous: any; }> {
+class StateControl extends THREE.EventDispatcher<StateControlEvents> {
     private _view: View;
     private _domElement: HTMLElement;
 
     private _clickTimeStamp: number;
-    private _lastMousePressed: { button?: number, viewCoords: THREE.Vector2 };
+    private _lastMousePressed: { button?: number; viewCoords: THREE.Vector2 };
     private _currentMousePressed?: number;
     private _currentKeyPressed?: number;
 
-    private _enabled: boolean = true;
-    private _enableKeys: boolean = true;
+    private _enabled = true;
+    private _enableKeys = true;
     private _currentState: State;
 
     // States
     /** When camera is idle. */
-    /**{@link State} when camera is idle.*/
+    /** {@link State} when camera is idle. */
     public NONE: State = DEFAULT_STATES.NONE;
-    /**{@link State} describing camera orbiting movement : the camera moves around its target at a constant distance from it.*/
+    /** {@link State} describing camera orbiting movement : the camera moves around its target at a constant distance from it. */
     public ORBIT: State = DEFAULT_STATES.ORBIT;
-    /**{@link State} describing camera dolly movement : the camera moves forward or backward from its target.*/
+    /** {@link State} describing camera dolly movement : the camera moves forward or backward from its target. */
     public DOLLY: State = DEFAULT_STATES.DOLLY;
-    /**{@link State} describing camera pan movement : the camera moves parallel to the current view plane.*/
+    /** {@link State} describing camera pan movement : the camera moves parallel to the current view plane. */
     public PAN: State = DEFAULT_STATES.PAN;
-    /**{@link State} describing camera drag movement : the camera is moved around the view to give the feeling that the view is dragged under a static camera.*/
+    /** {@link State} describing camera drag movement : the camera is moved around the view to give the feeling that the view is dragged under a static camera. */
     public MOVE_GLOBE: State = DEFAULT_STATES.MOVE_GLOBE;
-    /**{@link State} describing camera panoramic movement : the camera is rotated around its own position.*/
+    /** {@link State} describing camera panoramic movement : the camera is rotated around its own position. */
     public PANORAMIC: State = DEFAULT_STATES.PANORAMIC;
-    /**{@link State} describing camera travel in movement : the camera is zoomed in toward a given position. The target position depends on the key/mouse binding of this state. If bound to a mouse button; the target position is the mouse position. Otherwise; it is the center of the screen.*/
+    /** {@link State} describing camera travel in movement : the camera is zoomed in toward a given position. The target position depends on the key/mouse binding of this state. If bound to a mouse button; the target position is the mouse position. Otherwise; it is the center of the screen. */
     public TRAVEL_IN: State = DEFAULT_STATES.TRAVEL_IN;
-    /**{@link State} describing camera travel out movement : the camera is zoomed out from a given position. The target position depends on the key/mouse binding of this state. If bound to a mouse button; the target position is the mouse position. Otherwise; it is the center of the screen. It is disabled by default.*/
+    /** {@link State} describing camera travel out movement : the camera is zoomed out from a given position. The target position depends on the key/mouse binding of this state. If bound to a mouse button; the target position is the mouse position. Otherwise; it is the center of the screen. It is disabled by default. */
     public TRAVEL_OUT: State = DEFAULT_STATES.TRAVEL_OUT;
-    /**{@link State} describing camera zoom in and out movement.*/
+    /** {@link State} describing camera zoom in and out movement. */
     public ZOOM: State = DEFAULT_STATES.ZOOM;
 
     // this-bound versions of the event handling methods
-    private _on: Partial<{ [Key in keyof HTMLElementEventMap]: (this: this, ev: HTMLElementEventMap[Key]) => unknown }>;
+    // private _on: Partial<{ [Key in keyof HTMLElementEventMap]: (this: this, ev: HTMLElementEventMap[Key]) => unknown }>;
+
+    private _on: {
+        pointerdown: (this: StateControl, ev: PointerEvent) => void;
+        pointermove: (this: StateControl, ev: PointerEvent) => void;
+        pointerup: (this: StateControl, ev: PointerEvent) => void;
+        wheel: (this: StateControl, ev: WheelEvent) => void;
+        keydown: (this: StateControl, ev: KeyboardEvent) => void;
+        keyup: (this: StateControl, ev: KeyboardEvent) => void;
+        blur: (this: StateControl) => void;
+        contextmenu: (this: StateControl, ev: PointerEvent) => void;
+    };
 
     constructor(view: View, options?: Partial<{ [Name in keyof typeof DEFAULT_STATES]: Partial<typeof DEFAULT_STATES[Name]> }>) {
         super();
@@ -188,27 +208,22 @@ class StateControl extends THREE.EventDispatcher<{ type: string; viewCoords: THR
         this._currentMousePressed = undefined;
         this._currentKeyPressed = undefined;
 
-        const on: typeof this._on = {
-            pointerdown: this.onPointerDown,
-            pointermove: this.onPointerMove,
-            pointerup: this.onPointerUp,
-            wheel: this.onMouseWheel,
-            keydown: this.onKeyDown,
-            keyup: this.onKeyUp,
+        this._on = {
+            pointerdown: this.onPointerDown.bind(this),
+            pointermove: this.onPointerMove.bind(this),
+            pointerup: this.onPointerDown.bind(this),
+            wheel: this.onMouseWheel.bind(this),
+            keydown: this.onKeyDown.bind(this),
+            keyup: this.onKeyUp.bind(this),
             // Reset key/mouse when window loose focus
-            blur: this.onBlur,
+            blur: this.onBlur.bind(this),
             // disable context menu when right-clicking
-            contextmenu: this.onContextMenu,
+            contextmenu: this.onContextMenu.bind(this),
         };
 
-        this._on = {}
-        for (const [name, fn] of objectEntries(on)) {
-            // Dirtier than just passing `this` as a third param, but preserved like this for now.
-            const bound_fn = fn!.bind(this as any);
-            // @ts-ignore: Massive pain to resolve. Recipient type in an assignment gets converted from a union to an intersection.
-            this._on[name] = bound_fn;
-            // @ts-ignore: Similar
-            this._domElement.addEventListener(name, bound_fn);
+        for (const [name, fn] of objectEntries(this._on)) {
+            // @ts-expect-error: Binding `this` to the first arg messes up the typing.
+            this._domElement.addEventListener(name, fn);
         }
 
         if (options) {
@@ -216,6 +231,11 @@ class StateControl extends THREE.EventDispatcher<{ type: string; viewCoords: THR
         }
     }
 
+    /**
+     * Defines whether all input will be communicated to the associated `Controls` or not.
+     * Default is true.
+     * @returns boolean
+     */
     public get enabled(): boolean {
         return this._enabled;
     }
@@ -228,6 +248,11 @@ class StateControl extends THREE.EventDispatcher<{ type: string; viewCoords: THR
         this._enabled = value;
     }
 
+    /**
+     * Defines whether keyboard input will be communicated to the associated `Controls` or not.
+     * Default is true.
+     * @returns boolean
+     */
     public get enableKeys(): boolean {
         return this._enableKeys;
     }
@@ -271,9 +296,9 @@ class StateControl extends THREE.EventDispatcher<{ type: string; viewCoords: THR
                 if (!state.trigger) { return state; }
                 // If the input relates to a trigger (TRAVEL_IN, TRAVEL_OUT), dispatch a relevant event.
                 this.dispatchEvent({
-                    type: state.event,
+                    type: state.event as 'travel_in' | 'travel_out' | 'zoom',
                     // Dont pass viewCoords if the input is only a keyboard input.
-                    viewCoords: mouseButton !== undefined && viewCoords,
+                    viewCoords: mouseButton ? viewCoords : undefined,
                     direction: state.direction,
                 });
             }
@@ -299,7 +324,7 @@ class StateControl extends THREE.EventDispatcher<{ type: string; viewCoords: THR
 
     /**
      * Set the current StateControl {@link State} properties to given values.
-     * @param {object}  options     Object containing the `State` values to set current `StateControl` properties to.
+     * @param  options     Object containing the `State` values to set current `StateControl` properties to.
      * The `enable` property do not necessarily need to be specified. In that case, the
      * previous value of this property will be kept for the new {@link State}.
      *
@@ -333,9 +358,9 @@ class StateControl extends THREE.EventDispatcher<{ type: string; viewCoords: THR
             const newState = partialState as State;
 
             // Copy private properties
-            newState["_event"] = state_obj.event;
-            newState["_trigger"] = state_obj.trigger;
-            newState["_direction"] = state_obj.direction;
+            newState['_event'] = state_obj.event;
+            newState['_trigger'] = state_obj.trigger;
+            newState['_direction'] = state_obj.direction;
 
             this[state] = newState;
         }
@@ -347,7 +372,7 @@ class StateControl extends THREE.EventDispatcher<{ type: string; viewCoords: THR
     onPointerDown(event: PointerEvent) {
         if (!this.enabled) { return; }
 
-        viewCoords.copy(this._view.eventToViewCoords(event)!);
+        viewCoords.copy(this._view.eventToViewCoords(event));
 
         switch (event.pointerType) {
             case 'mouse': {
@@ -382,10 +407,12 @@ class StateControl extends THREE.EventDispatcher<{ type: string; viewCoords: THR
             default:
         }
 
-        // Not a good practice casting them as any but required due to the this-binding insanity
-        this._domElement.addEventListener('pointermove', this._on.pointermove as any, false);
-        this._domElement.addEventListener('pointerup', this._on.pointerup as any, false);
-        this._domElement.addEventListener('mouseleave', this._on.pointerup as any, false);
+        // @ts-expect-error: this-binding was a mistake
+        this._domElement.addEventListener('pointermove', this._on.pointermove, false);
+        // @ts-expect-error: this-binding was a mistake
+        this._domElement.addEventListener('pointerup', this._on.pointerup, false);
+        // @ts-expect-error: this-binding was a mistake
+        this._domElement.addEventListener('mouseleave', this._on.pointerup, false);
     }
 
     onPointerMove(event: PointerEvent) {
@@ -396,6 +423,7 @@ class StateControl extends THREE.EventDispatcher<{ type: string; viewCoords: THR
 
         switch (event.pointerType) {
             case 'mouse':
+                if (!this.currentState.event) { break; }
                 this.dispatchEvent({ type: this.currentState.event, viewCoords });
                 break;
             // TODO : add touch event management
@@ -407,10 +435,12 @@ class StateControl extends THREE.EventDispatcher<{ type: string; viewCoords: THR
         if (!this.enabled) { return; }
         this._currentMousePressed = undefined;
 
-        // Not a good practice casting them as any but required due to the this-binding insanity
-        this._domElement.removeEventListener('pointermove', this._on.pointermove as any, false);
-        this._domElement.removeEventListener('pointerup', this._on.pointerup as any, false);
-        this._domElement.removeEventListener('mouseleave', this._on.pointerup as any, false);
+        // @ts-expect-error: this-binding was a mistake
+        this._domElement.removeEventListener('pointermove', this._on.pointermove, false);
+        // @ts-expect-error: this-binding was a mistake
+        this._domElement.removeEventListener('pointerup', this._on.pointerup, false);
+        // @ts-expect-error: this-binding was a mistake
+        this._domElement.removeEventListener('mouseleave', this._on.pointerup, false);
 
         this.currentState = this.NONE;
     }
@@ -422,10 +452,9 @@ class StateControl extends THREE.EventDispatcher<{ type: string; viewCoords: THR
         event.preventDefault();
 
         if (this.enabled && this.ZOOM.enable) {
-            console.log(this.ZOOM.event);
             viewCoords.copy(this._view.eventToViewCoords(event));
             this.currentState = this.ZOOM;
-            this.dispatchEvent({ type: this.ZOOM.event, delta: event.deltaY, viewCoords });
+            this.dispatchEvent({ type: this.ZOOM.event as Event, delta: event.deltaY, viewCoords });
         }
     }
 
@@ -436,7 +465,7 @@ class StateControl extends THREE.EventDispatcher<{ type: string; viewCoords: THR
         if (!this.enabled || !this.enableKeys) { return; }
         this._currentKeyPressed = event.keyCode;
 
-        this.inputToState(this._currentMousePressed!, this._currentKeyPressed);
+        this.inputToState(this._currentMousePressed, this._currentKeyPressed);
     }
 
     onKeyUp() {
@@ -465,7 +494,8 @@ class StateControl extends THREE.EventDispatcher<{ type: string; viewCoords: THR
         this._currentKeyPressed = undefined;
 
         for (const [name, fn] of objectEntries(this._on)) {
-            this._domElement.removeEventListener(name, fn as any, false);
+            // @ts-expect-error: this-binding was a mistake
+            this._domElement.removeEventListener(name, fn, false);
         }
     }
 }
